@@ -71,43 +71,6 @@ Issues and pull requests are welcome. Two ground rules to keep the tool fit for 
 1. **Single file, no runtime dependencies.** No build step, no bundler, no `node_modules`. Inline everything.
 2. **Offline-first.** Anything that requires the network at runtime should degrade gracefully when offline.
 
-## Deployment
-
-The public URL <https://phbeks.com/audio> is served from the `phbeks-v2` Vercel project (which deploys the `phbeks-site` repo). A standalone preview of this repo is also auto-deployed to Vercel on every push to `main` via the workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) — useful for peer review.
-
-### Auto-deploy (this repo → standalone Vercel preview)
-
-On every push to `main`, GitHub Actions runs `vercel deploy --prod`. To enable, set these repo secrets in **Settings → Secrets and variables → Actions**:
-
-- `VERCEL_TOKEN` — create at <https://vercel.com/account/tokens>
-- `VERCEL_ORG_ID` — from `.vercel/project.json` after running `vercel link` once locally
-- `VERCEL_PROJECT_ID` — same source
-
-Until the secrets exist the workflow will fail but won't block anything else.
-
-### Production deploy (phbeks.com/audio)
-
-After editing `audio_check.html`:
-
-```bash
-# 1. Mirror the file into the phbeks-site working copy
-cp "T:/claude_projects/mytools/audio_check/audio_check.html" \
-   "T:/claude_projects/smarthouse/phbeks-site/audio/index.html"
-
-# 2. Deploy to Vercel production
-cd "T:/claude_projects/smarthouse/phbeks-site"
-vercel --prod --yes
-
-# 3. Commit + push the source repo so GitHub stays in sync
-cd "T:/claude_projects/mytools/audio_check"
-git add audio_check.html
-git commit -m "describe the change"
-git push
-
-# 4. Verify
-curl -sS -o /dev/null -w "%{http_code}\n" https://phbeks.com/audio   # expect 200
-```
-
 ## License
 
 [MIT](LICENSE) — see the `LICENSE` file. Copyright © 2026 phbeks.
