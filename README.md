@@ -52,18 +52,6 @@ The downloaded file works fully offline. Bookmark the saved location — handy w
 
 - [`audio_check.html`](audio_check.html) — the entire app.
 
-## Local development
-
-No build, no install. Clone and open the file:
-
-```bash
-git clone https://github.com/deokman420/audio_check.git
-cd audio_check
-# open audio_check.html in any modern browser
-```
-
-Edit the file, save, refresh the browser. That's the loop.
-
 ## Contributing
 
 Issues and pull requests are welcome. Two ground rules to keep the tool fit for purpose:
