@@ -182,6 +182,15 @@ a:hover { opacity: 0.8; }
   border-color: var(--accent);
   color: var(--accent);
 }
+.btn-ghost.btn-danger {
+  color: var(--red);
+  font-weight: 600;
+}
+.btn-ghost.btn-danger:hover:not(:disabled) {
+  border-color: var(--red);
+  color: var(--red);
+  background: rgba(239,68,68,0.08);
+}
 
 /* Form */
 .field-row {
@@ -721,7 +730,7 @@ details .body strong { color: var(--text); font-weight: 500; }
             <div class="status-dot"></div>
             <div class="status-text" id="status-text">MIC ACTIVE</div>
           </div>
-          <button class="btn btn-ghost" type="button" onclick="releaseMicrophone()">✕ Release</button>
+          <button class="btn btn-ghost btn-danger" type="button" onclick="releaseMicrophone()">✕ Release</button>
         </div>
 
         <div class="field-row">
@@ -894,6 +903,8 @@ let stream = null;
 let audioContext = null;
 let analyser = null;
 let monitorGain = null;
+let monitorStream = null;
+let monitorSource = null;
 let mediaRecorder = null;
 let audioChunks = [];
 let animationFrame = null;
@@ -901,6 +912,7 @@ let recordingStartTime = null;
 let timerInterval = null;
 let recordedBlob = null;
 let recordedUrl = null;
+let recordedDurationSec = 0;
 let isRecording = false;
 let currentInputDeviceId = null;
 let currentOutputDeviceId = null;
@@ -981,7 +993,13 @@ async function loadDevices(triggerPrompt = false) {
 
 // ===== Speaker test =====
 function ensureAudioContext() {
-  if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  if (!audioContext) {
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    audioContext = new Ctor({ latencyHint: 'interactive' });
+  }
+  if (audioContext.state === 'suspended') {
+    audioContext.resume().catch(() => {});
+  }
   return audioContext;
 }
 
@@ -1078,7 +1096,12 @@ function pbTick() {
   const pa = document.getElementById('playback-audio');
   if (!pa || !pa.src) return;
   const cur = pa.currentTime || 0;
-  const dur = isFinite(pa.duration) ? pa.duration : 0;
+  // MediaRecorder WebM blobs report Infinity for duration until the file is
+  // fully scanned. We tracked the wall-clock recording length, so use that
+  // as a reliable fallback instead of forcing a seek-to-end probe (which
+  // makes the first playback noticeably choppy).
+  const liveDur = pa.duration;
+  const dur = (isFinite(liveDur) && liveDur > 0) ? liveDur : recordedDurationSec;
   document.getElementById('pb-cur').textContent = pbFmt(cur);
   document.getElementById('pb-dur').textContent = pbFmt(dur);
   const pct = dur > 0 ? (cur / dur) * 100 : 0;
@@ -1104,37 +1127,30 @@ function pbTogglePlay() {
 
 function pbSeek(event) {
   const pa = document.getElementById('playback-audio');
-  if (!pa || !isFinite(pa.duration) || pa.duration === 0) return;
+  if (!pa) return;
+  const dur = (isFinite(pa.duration) && pa.duration > 0) ? pa.duration : recordedDurationSec;
+  if (!dur) return;
   const track = document.getElementById('pb-track');
   const rect = track.getBoundingClientRect();
   const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-  pa.currentTime = ratio * pa.duration;
+  try { pa.currentTime = ratio * dur; } catch (_) {}
   pbTick();
 }
 
 function pbLoad(url) {
   const pa = document.getElementById('playback-audio');
   pa.src = url;
+  pa.preload = 'auto';
   pa.volume = 1;
   pa.muted = false;
   document.getElementById('pb-play').textContent = '▶';
   document.getElementById('pb-cur').textContent = '0:00';
-  document.getElementById('pb-dur').textContent = '...';
+  document.getElementById('pb-dur').textContent = pbFmt(recordedDurationSec);
   document.getElementById('pb-fill').style.width = '0%';
   document.getElementById('pb-knob').style.left = '0%';
-  // WebM duration fix: seek to end so browser scans the file and calculates real duration
-  pa.addEventListener('loadedmetadata', function fixDuration() {
-    pa.removeEventListener('loadedmetadata', fixDuration);
-    if (!isFinite(pa.duration)) {
-      pa.currentTime = 1e101;
-      pa.addEventListener('timeupdate', function rewind() {
-        if (isFinite(pa.duration)) {
-          pa.removeEventListener('timeupdate', rewind);
-          pa.currentTime = 0;
-          document.getElementById('pb-dur').textContent = pbFmt(pa.duration);
-        }
-      });
-    } else {
+  pa.addEventListener('loadedmetadata', function onMeta() {
+    pa.removeEventListener('loadedmetadata', onMeta);
+    if (isFinite(pa.duration) && pa.duration > 0) {
       document.getElementById('pb-dur').textContent = pbFmt(pa.duration);
     }
   });
@@ -1197,21 +1213,67 @@ async function initMicrophone() {
 }
 
 function buildGraph() {
+  // Visualization/recording branch only — monitor is handled separately
+  // (see startMonitor) so it can use a raw, EC/NS/AGC-disabled capture
+  // for smooth low-latency sidetone.
   const source = audioContext.createMediaStreamSource(stream);
   analyser = audioContext.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.8;
   monitorGain = audioContext.createGain();
-  monitorGain.gain.value = document.getElementById('monitor-toggle').checked ? 1 : 0;
+  monitorGain.gain.value = 1;
   source.connect(analyser);
-  source.connect(monitorGain);
-  monitorGain.connect(audioContext.destination);
+  // monitorGain is connected only while the user has the toggle on
+  if (document.getElementById('monitor-toggle').checked) startMonitor();
+}
+
+async function startMonitor() {
+  if (monitorSource) return; // already running
+  try {
+    ensureAudioContext();
+    // Echo cancellation, noise suppression, and AGC each add buffering and
+    // adaptive processing that produces audible chopping on a live sidetone
+    // loop. We grab a parallel raw stream just for the monitor path so the
+    // recording stream keeps its clean processing.
+    monitorStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        ...(currentInputDeviceId ? { deviceId: { exact: currentInputDeviceId } } : {}),
+      },
+    });
+    monitorSource = audioContext.createMediaStreamSource(monitorStream);
+    monitorSource.connect(monitorGain);
+    monitorGain.connect(audioContext.destination);
+  } catch (err) {
+    console.error('monitor stream failed', err);
+    document.getElementById('monitor-toggle').checked = false;
+    toast('Could not start monitor: ' + err.message);
+    stopMonitor();
+  }
+}
+
+function stopMonitor() {
+  if (monitorSource) {
+    try { monitorSource.disconnect(); } catch (_) {}
+    monitorSource = null;
+  }
+  if (monitorGain) {
+    try { monitorGain.disconnect(); } catch (_) {}
+  }
+  if (monitorStream) {
+    monitorStream.getTracks().forEach(t => t.stop());
+    monitorStream = null;
+  }
 }
 
 async function switchMic() {
   const sel = document.getElementById('input-select');
   if (!sel.value) return;
   currentInputDeviceId = sel.value;
+  const wasMonitoring = !!monitorSource;
+  stopMonitor();
   if (stream) stream.getTracks().forEach(t => t.stop());
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -1221,6 +1283,7 @@ async function switchMic() {
       },
     });
     buildGraph();
+    if (wasMonitoring) startMonitor();
     toast('Switched microphone');
   } catch (err) {
     console.error(err);
@@ -1314,8 +1377,12 @@ function drawVisualizer() {
 }
 
 function toggleLiveMonitor() {
-  if (!monitorGain) return;
-  monitorGain.gain.value = document.getElementById('monitor-toggle').checked ? 1 : 0;
+  if (!audioContext) return;
+  if (document.getElementById('monitor-toggle').checked) {
+    startMonitor();
+  } else {
+    stopMonitor();
+  }
 }
 
 function toggleRecording() {
@@ -1336,6 +1403,7 @@ function toggleRecording() {
     };
     mediaRecorder.onstop = async () => {
       recordedBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+      recordedDurationSec = recordingStartTime ? (Date.now() - recordingStartTime) / 1000 : 0;
       if (recordedUrl) URL.revokeObjectURL(recordedUrl);
       recordedUrl = URL.createObjectURL(recordedBlob);
       pbLoad(recordedUrl);
@@ -1350,7 +1418,11 @@ function toggleRecording() {
       indicator.classList.remove('active');
     };
 
-    mediaRecorder.start(250);
+    // No timeslice — the WebM/Opus blob is finalized in one piece on stop()
+    // with valid headers, which plays back smoothly. With a timeslice the
+    // browser emits chunks continuously and the resulting file's seek/cue
+    // info can be flaky, contributing to choppy initial playback.
+    mediaRecorder.start();
     isRecording = true;
     recordBtn.classList.add('recording');
     recordText.textContent = 'Stop recording';
@@ -1390,6 +1462,7 @@ function clearRecording() {
   if (recordedUrl) URL.revokeObjectURL(recordedUrl);
   recordedBlob = null;
   recordedUrl = null;
+  recordedDurationSec = 0;
   const pa = document.getElementById('playback-audio');
   pa.pause();
   pa.src = '';
@@ -1406,6 +1479,7 @@ function releaseMicrophone() {
   if (timerInterval) clearInterval(timerInterval);
   if (animationFrame) cancelAnimationFrame(animationFrame);
   animationFrame = null;
+  stopMonitor();
   if (stream) stream.getTracks().forEach(track => track.stop());
   if (audioContext) { audioContext.close(); audioContext = null; }
   stream = null;
@@ -1413,6 +1487,7 @@ function releaseMicrophone() {
   monitorGain = null;
   mediaRecorder = null;
   audioChunks = [];
+  document.getElementById('monitor-toggle').checked = false;
   clearRecording();
   document.getElementById('mic-screen').style.display = 'none';
   document.getElementById('intro-screen').style.display = 'block';
@@ -1486,6 +1561,7 @@ async function saveOffline() {
 
 window.addEventListener('beforeunload', () => {
   if (stream) stream.getTracks().forEach(track => track.stop());
+  if (monitorStream) monitorStream.getTracks().forEach(track => track.stop());
 });
 
 loadDevices(false);
