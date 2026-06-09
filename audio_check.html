@@ -15,30 +15,44 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
+  /* phbeks.com canonical tokens — mirrors phbeks-tokens.css.
+     --bg-inset is a sanctioned audio-local extension for display insets. */
   --bg: #0c0f16;
   --bg-card: #141820;
-  --bg-card-hover: #1a1f2b;
+  --bg-card-2: #1a1f2b;
+  --bg-card-hover: #1f2530;
   --bg-inset: #0a0d12;
   --border: #1e2530;
+  --border-strong: #2a3140;
   --accent: #00d4aa;
-  --accent-dim: rgba(0,212,170,0.1);
+  --accent-dim: rgba(0,212,170,0.12);
   --accent-soft: rgba(0,212,170,0.18);
   --blue: #3b82f6;
   --purple: #a855f7;
   --orange: #f59e0b;
-  --red: #ef4444;
+  --good: #10b981;
+  --warn: #f59e0b;
+  --bad: #ef4444;
   --text: #e2e8f0;
   --text-dim: #8492a6;
   --text-muted: #4a5568;
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --mono: 'JetBrains Mono', 'Consolas', monospace;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  /* Canonical backdrop (Option B) */
+  --backdrop: linear-gradient(180deg, rgba(0,212,170,0.05) 0%, transparent 42%),
+              radial-gradient(90% 60% at 100% 0%, rgba(59,130,246,0.05) 0%, transparent 55%),
+              var(--bg);
 }
 
 html { scroll-behavior: smooth; }
 @media (pointer: coarse) { html { scroll-behavior: auto; } }
 
 body {
-  background: var(--bg);
+  background: var(--backdrop);
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font);
   line-height: 1.6;
@@ -183,12 +197,12 @@ a:hover { opacity: 0.8; }
   color: var(--accent);
 }
 .btn-ghost.btn-danger {
-  color: var(--red);
+  color: var(--bad);
   font-weight: 600;
 }
 .btn-ghost.btn-danger:hover:not(:disabled) {
-  border-color: var(--red);
-  color: var(--red);
+  border-color: var(--bad);
+  color: var(--bad);
   background: rgba(239,68,68,0.08);
 }
 
@@ -211,15 +225,16 @@ a:hover { opacity: 0.8; }
 select {
   flex: 1;
   min-width: 200px;
-  background: var(--bg-inset);
+  background: var(--bg-card-2);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 10px 12px;
   font-family: inherit;
   font-size: 0.9rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-select:focus { outline: none; border-color: var(--accent); }
+select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 select:disabled { opacity: 0.6; }
 
 .button-row {
@@ -350,7 +365,7 @@ select:disabled { opacity: 0.6; }
 }
 .vu-verdict.ok { color: var(--accent); }
 .vu-verdict.low { color: var(--orange); }
-.vu-verdict.high { color: var(--red); }
+.vu-verdict.high { color: var(--bad); }
 .vu-verdict.idle { color: var(--text-muted); }
 
 /* Controls grid */
@@ -432,7 +447,7 @@ input:checked + .slider:before { transform: translateX(18px); background-color: 
 }
 #record-btn:hover:not(.recording) { background: #00e8ba; transform: translateY(-1px); }
 #record-btn.recording {
-  background: var(--red);
+  background: var(--bad);
   color: #fff;
   animation: record-pulse 1.5s infinite;
 }
@@ -451,7 +466,7 @@ input:checked + .slider:before { transform: translateX(18px); background-color: 
 .red-dot {
   display: inline-block;
   width: 7px; height: 7px;
-  background: var(--red);
+  background: var(--bad);
   border-radius: 50%;
   animation: status-pulse 1s infinite;
 }
@@ -590,7 +605,7 @@ details .body {
   font-size: 0.88rem;
   line-height: 1.7;
 }
-details .body ol { margin: 4px 0 8px; padding-left: 18px; }
+details .body ol, details .body ul { margin: 4px 0 8px; padding-left: 18px; }
 details .body li { margin-bottom: 6px; }
 details .body p { margin-top: 8px; }
 details .body strong { color: var(--text); font-weight: 500; }
@@ -698,6 +713,20 @@ details .body strong { color: var(--text); font-weight: 500; }
         <button class="btn btn-ghost" type="button" onclick="speakerOk()">✅ Yes</button>
         <button class="btn btn-ghost" type="button" onclick="openTroubleshoot('ts-no-audio')">❌ No / too quiet</button>
         <span id="speaker-result" class="hint" style="margin-left:auto;"></span>
+      </div>
+
+      <div class="tab-monitor" style="margin-top:20px; padding-top:18px; border-top:1px solid var(--border);">
+        <div class="monitor-label">
+          <span>Visualize audio from another tab (YouTube, calls…)</span>
+          <button class="btn btn-secondary" type="button" id="tab-monitor-btn" onclick="toggleTabMonitor()" style="flex:0 0 auto; min-width:0;">📈 Monitor a tab</button>
+        </div>
+        <div class="vu-wrap" style="margin-top:12px; margin-bottom:0;">
+          <div class="vu-bar">
+            <div class="vu-fill" id="tab-vu-fill"></div>
+            <div class="vu-peak" id="tab-vu-peak" style="left:0%;"></div>
+          </div>
+          <div class="vu-verdict idle" id="tab-vu-verdict">// click "Monitor a tab" → pick a tab → tick "Share tab audio"</div>
+        </div>
       </div>
     </div>
   </section>
@@ -831,6 +860,25 @@ details .body strong { color: var(--text); font-weight: 500; }
       </div>
     </details>
 
+    <details id="ts-tab-audio">
+      <summary>Is another tab (YouTube, a call) actually producing sound?</summary>
+      <div class="body">
+        <p>Use the <strong>Monitor a tab</strong> VU meter in step 1 to <em>see</em> the audio coming out of another tab — handy when you're not sure whether the silence is the other tab, your speakers, or the call app.</p>
+        <ol>
+          <li>In step 1, click <strong>📈 Monitor a tab</strong>.</li>
+          <li>In the browser's share picker, choose the <strong>tab</strong> you want to check (e.g. the YouTube or meeting tab), and tick <strong>"Share tab audio"</strong> before clicking Share.</li>
+          <li>Play the audio in that tab. The green level bar should move:
+            <ul>
+              <li><strong>Bar moves</strong> → that tab <em>is</em> producing sound. If you still can't hear it, the problem is your output device (see "I can't hear them" above), not the tab.</li>
+              <li><strong>Bar stays flat</strong> → the tab is silent. Check it isn't muted (its own volume, or the small 🔇 on the browser tab), and that something is actually playing.</li>
+            </ul>
+          </li>
+          <li>Click <strong>✕ Stop monitoring</strong> (or the browser's "Stop sharing" bar) when you're done.</li>
+        </ol>
+        <p class="hint" style="margin-top:10px;">How it works: the browser only lets a page "listen" to another tab when <strong>you</strong> explicitly pick it in that share prompt — it can't happen silently. The meter just measures the level to show you sound is flowing; it isn't recorded or sent anywhere. Tab-audio sharing works in Chrome and Edge; Firefox and Safari don't support it.</p>
+      </div>
+    </details>
+
     <details id="ts-echo">
       <summary>People hear an echo or my own voice</summary>
       <div class="body">
@@ -920,6 +968,13 @@ let peakHold = 0;
 let peakHoldUntil = 0;
 let testAudioEl = null;
 let pbTickInterval = null;
+// Tab-audio monitor (Step 01) — visualizes audio captured from another tab.
+let tabStream = null;
+let tabSource = null;
+let tabAnalyser = null;
+let tabAnimationFrame = null;
+let tabPeakHold = 0;
+let tabPeakHoldUntil = 0;
 
 const canvas = document.getElementById('visualizer');
 const ctx = canvas.getContext('2d');
@@ -1265,6 +1320,115 @@ function stopMonitor() {
   if (monitorStream) {
     monitorStream.getTracks().forEach(t => t.stop());
     monitorStream = null;
+  }
+}
+
+/* ---- Tab-audio monitor (Step 01) ---------------------------------------
+   Captures audio from another tab via getDisplayMedia and drives a VU meter.
+   Analyser only — never connected to destination, so the tab's sound is not
+   re-played (no echo); it's already coming out of the speakers. */
+function toggleTabMonitor() {
+  if (tabStream) stopTabMonitor();
+  else startTabMonitor();
+}
+
+async function startTabMonitor() {
+  if (tabStream) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    setTabVerdict('// this browser can\'t capture tab audio (try Chrome/Edge)', 'low');
+    return;
+  }
+  let display;
+  try {
+    // video must be requested for Chrome/Edge to expose tab audio; we don't render it.
+    // Hardening: only this feature's intended surface — decline to offer whole-system
+    // audio capture, and don't offer to capture this very tab.
+    display = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: true,
+      systemAudio: 'exclude',
+      selfBrowserSurface: 'exclude',
+    });
+  } catch (err) {
+    // User cancelled the picker — leave the meter idle, no error noise.
+    if (err && (err.name === 'NotAllowedError' || err.name === 'AbortError')) return;
+    console.error('tab capture failed', err);
+    setTabVerdict('// could not capture tab: ' + err.message, 'low');
+    return;
+  }
+  if (display.getAudioTracks().length === 0) {
+    display.getTracks().forEach(t => t.stop());
+    setTabVerdict('// no audio shared — re-pick a tab and tick "Share tab audio" (Firefox/Safari can\'t share tab audio)', 'low');
+    return;
+  }
+  tabStream = display;
+  ensureAudioContext();
+  tabSource = audioContext.createMediaStreamSource(tabStream);
+  tabAnalyser = audioContext.createAnalyser();
+  tabAnalyser.fftSize = 2048;
+  tabAnalyser.smoothingTimeConstant = 0.8;
+  tabSource.connect(tabAnalyser); // analyser only — no destination, no echo
+  // User stops sharing via the browser's "Stop sharing" bar:
+  tabStream.getAudioTracks()[0].addEventListener('ended', stopTabMonitor);
+  document.getElementById('tab-monitor-btn').textContent = '✕ Stop monitoring';
+  setTabVerdict('// receiving tab audio', 'ok');
+  drawTabVU();
+}
+
+function stopTabMonitor() {
+  if (tabAnimationFrame) { cancelAnimationFrame(tabAnimationFrame); tabAnimationFrame = null; }
+  if (tabSource) { try { tabSource.disconnect(); } catch (_) {} tabSource = null; }
+  if (tabStream) { tabStream.getTracks().forEach(t => t.stop()); tabStream = null; }
+  tabAnalyser = null;
+  tabPeakHold = 0; tabPeakHoldUntil = 0;
+  document.getElementById('tab-monitor-btn').textContent = '📈 Monitor a tab';
+  document.getElementById('tab-vu-fill').style.width = '0%';
+  document.getElementById('tab-vu-peak').style.left = '0%';
+  setTabVerdict('// click "Monitor a tab" → pick a tab → tick "Share tab audio"', 'idle');
+}
+
+function setTabVerdict(text, cls) {
+  const v = document.getElementById('tab-vu-verdict');
+  v.textContent = text;
+  v.className = 'vu-verdict ' + cls;
+}
+
+function drawTabVU() {
+  tabAnimationFrame = requestAnimationFrame(drawTabVU);
+  if (!tabAnalyser) return;
+  const n = tabAnalyser.fftSize;
+  const data = new Uint8Array(n);
+  tabAnalyser.getByteTimeDomainData(data);
+
+  let sumSq = 0, peak = 0;
+  for (let i = 0; i < n; i++) {
+    const s = (data[i] - 128) / 128;
+    sumSq += s * s;
+    const a = Math.abs(s);
+    if (a > peak) peak = a;
+  }
+  const rms = Math.sqrt(sumSq / n);
+
+  // Tuned for full-scale media (not quiet speech): normal content sits mid-bar.
+  const fill = Math.min(100, rms * 220);
+  document.getElementById('tab-vu-fill').style.width = fill + '%';
+
+  const peakPct = Math.min(100, peak * 100);
+  const now = performance.now();
+  if (peakPct > tabPeakHold || now > tabPeakHoldUntil) {
+    tabPeakHold = peakPct;
+    tabPeakHoldUntil = now + 800;
+  } else {
+    tabPeakHold = Math.max(0, tabPeakHold - 0.7);
+  }
+  document.getElementById('tab-vu-peak').style.left = tabPeakHold + '%';
+
+  if (rms < 0.008) {
+    setTabVerdict('// tab is silent — is something playing?', 'idle');
+  } else if (peak > 0.99) {
+    setTabVerdict('// very loud — audio is peaking', 'high');
+  } else {
+    setTabVerdict('// receiving tab audio', 'ok');
   }
 }
 
