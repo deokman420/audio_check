@@ -8,11 +8,12 @@ Built so anyone hitting a mic or speaker problem on a Zoom / Teams / Meet call c
 
 ## What it does
 
-1. **Speaker test** — pick an output device and play a 440 Hz tone or a 3-note check. Confirms your headphones / speakers actually work and are routed correctly.
+1. **Speaker test** — pick an output device and play a 440 Hz tone or a 3-note check. Confirms your headphones / speakers actually work and are routed correctly. Includes a **"Monitor a tab" VU meter** that visualizes audio coming from *another* tab (YouTube, a call, etc.) so you can confirm a source is actually producing sound — capture is consent-gated via the browser's screen-share picker, measured only (never recorded or sent anywhere).
 2. **Mic test** — live waveform + segmented VU level meter with a verdict ("too quiet / good / clipping"). Pick between input devices, toggle live monitoring, and record / play back a sample.
-3. **Troubleshooting checklist** — collapsible, plain-English steps for the six most common call issues:
+3. **Troubleshooting checklist** — collapsible, plain-English steps for the most common call issues:
    - People can't hear me
    - I can't hear them
+   - Is another tab (YouTube, a call) actually producing sound?
    - Echo / feedback
    - Choppy / robotic / cutting out
    - Bluetooth headset sounds bad
@@ -45,6 +46,7 @@ The downloaded file works fully offline. Bookmark the saved location — handy w
 - **WebAudio API** for the live waveform, RMS / peak level meter, and synthesized test tones (rendered to WAV so they can be routed via `setSinkId`).
 - **MediaRecorder** (`audio/webm; codecs=opus` when supported) for record / playback.
 - **enumerateDevices + getUserMedia** with explicit `deviceId` for mic switching.
+- **getDisplayMedia** for the "Monitor a tab" meter — analyser-only (never connected to the audio destination, so no echo), levels retuned for full-scale media. Hardened with `systemAudio: 'exclude'` and `selfBrowserSurface: 'exclude'` to limit the capture surface to the intended tab. Chromium-only (Firefox/Safari don't expose tab audio).
 - **HTMLAudioElement.setSinkId** for output-device selection (Chromium only).
 - Google Fonts is loaded with a `media="print"` swap so the page renders instantly with `system-ui` if offline or behind a corporate proxy.
 
