@@ -699,6 +699,9 @@ details .body strong { color: var(--text); font-weight: 500; }
         </select>
         <button class="btn btn-ghost" type="button" onclick="loadDevices(true)">↻ Refresh devices</button>
       </div>
+      <div id="devices-unavailable" class="hint" style="display:none;">
+        ⓘ This browser will not list audio devices from a local file or an insecure connection. Open this page over <strong>https</strong> to choose an input or output.
+      </div>
       <div id="output-unsupported" class="hint" style="display:none;">
         ⓘ Your browser doesn't allow choosing the output device. The test sound plays through your system default — change it in OS sound settings if needed.
       </div>
@@ -989,7 +992,38 @@ function toast(msg, ms = 2400) {
 }
 
 // ===== Devices =====
+/* navigator.mediaDevices is undefined outside a secure context — and this
+   file is meant to be saved and opened from file://, where that is the
+   normal case rather than the exception. Safari also does not count
+   http://localhost as secure the way Chrome does. Reaching straight for it
+   threw a TypeError that surfaced only as a red line in the console, while
+   the two selects sat on their placeholder text with nothing to say why.
+
+   Detected once, here, so the page can say what is wrong instead. */
+function mediaDevicesUnavailable() {
+  return !navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== "function";
+}
+
+function showNoDeviceAccess() {
+  const outSel = document.getElementById("output-select");
+  const inSel = document.getElementById("input-select");
+  if (outSel) {
+    outSel.innerHTML = "<option>System default</option>";
+    outSel.disabled = true;
+  }
+  if (inSel) {
+    inSel.innerHTML = "<option>Device list unavailable</option>";
+    inSel.disabled = true;
+  }
+  const note = document.getElementById("devices-unavailable");
+  if (note) note.style.display = "block";
+}
+
 async function loadDevices(triggerPrompt = false) {
+  if (mediaDevicesUnavailable()) {
+    showNoDeviceAccess();
+    return;
+  }
   try {
     if (triggerPrompt && !stream) {
       try {
@@ -1679,6 +1713,7 @@ async function copyDiagnostics() {
   lines.push('setSinkId supported: ' + supportsSink);
   lines.push('AudioContext sample rate: ' + (audioContext?.sampleRate || 'n/a'));
   try {
+    if (mediaDevicesUnavailable()) throw new Error("navigator.mediaDevices is not available (needs a secure context)");
     const devs = await navigator.mediaDevices.enumerateDevices();
     lines.push('');
     lines.push('Devices:');
